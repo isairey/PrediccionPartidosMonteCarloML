@@ -11,7 +11,11 @@ from sklearn.metrics import mean_absolute_error
 # =========================
 
 df = pd.read_csv(
-    "datasets/matches.csv"
+    "datasets/national_matches.csv"
+)
+
+print(
+    f"Registros encontrados: {len(df)}"
 )
 
 # =========================
@@ -23,14 +27,11 @@ X = df[
         "avg_gf",
         "avg_ga",
         "win_rate",
-        "form",
-        "home_avg",
-        "away_avg"
+        "form"
     ]
 ]
 
-# goles reales
-
+# Objetivo
 y = df["goals_scored"]
 
 # =========================
@@ -45,20 +46,22 @@ X_train, X_test, y_train, y_test = train_test_split(
 )
 
 # =========================
-# XGBOOST
+# MODELO XGBOOST
 # =========================
 
 model = XGBRegressor(
 
-    n_estimators=500,
+    n_estimators=1000,
 
-    max_depth=6,
+    max_depth=8,
 
-    learning_rate=0.03,
+    learning_rate=0.02,
 
-    subsample=0.8,
+    subsample=0.9,
 
-    colsample_bytree=0.8,
+    colsample_bytree=0.9,
+
+    objective="reg:squarederror",
 
     random_state=42
 )
@@ -86,7 +89,7 @@ print(
 )
 
 # =========================
-# GUARDAR
+# GUARDAR MODELO
 # =========================
 
 joblib.dump(
