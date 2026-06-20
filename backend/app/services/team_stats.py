@@ -12,10 +12,30 @@ headers = {
 }
 
 
-# =========================
-# BUSCAR EQUIPO
-# =========================
+# ==================================
+# CACHE SIMPLE (evita romper todo si API falla)
+# ==================================
+TEAM_CACHE = {
+    "mexico": 769,
+    "argentina": 779,
+    "brazil": 777,
+    "france": 657,
+    "spain": 670,
+    "germany": 165,
+    "england": 770
+}
+
+
+# ==================================
+# BUSCAR EQUIPO / SELECCIÓN
+# ==================================
 def search_team(team_name):
+
+    key = team_name.lower()
+
+    # 🔥 fallback inmediato
+    if key in TEAM_CACHE:
+        return TEAM_CACHE[key]
 
     url = f"https://{HOST}/teams?search={team_name}"
 
@@ -24,210 +44,125 @@ def search_team(team_name):
         response = requests.get(
             url,
             headers=headers,
-            timeout=10
+            timeout=15
         )
 
         data = response.json()
 
-        if data.get("results", 0) > 0:
+        # 🔴 ERROR API LIMIT
+        if "errors" in data and data["errors"]:
+            print("API LIMIT:", data["errors"])
+            return None
 
+        if data.get("results", 0) > 0:
             return data["response"][0]["team"]["id"]
 
         return None
 
     except Exception as e:
-
-        print("search_team:", e)
-
+        print("search_team error:", e)
         return None
 
 
-# =========================
+# ==================================
 # ÚLTIMOS PARTIDOS
-# =========================
-def get_last_matches(
-    team_id,
-    last=20
-):
+# ==================================
+def get_last_matches(team_id, last=15):
 
-    url = (
-        f"https://{HOST}/fixtures"
-        f"?team={team_id}"
-        f"&last={last}"
-    )
+    if not team_id:
+        return []
+
+    url = f"https://{HOST}/fixtures?team={team_id}&last={last}"
 
     try:
 
-        response = requests.get(
-            url,
-            headers=headers,
-            timeout=10
-        )
+        r = requests.get(url, headers=headers, timeout=20)
+        data = r.json()
 
-        data = response.json()
+        if "errors" in data and data["errors"]:
+            print("API LIMIT fixtures:", data["errors"])
+            return []
 
-        return data.get(
-            "response",
-            []
-        )
+        return data.get("response", [])
 
-    except Exception as e:
-
-        print(
-            "get_last_matches:",
-            e
-        )
-
+    except:
         return []
 
 
-# =========================
-# HEAD TO HEAD
-# =========================
-def get_h2h(
-    home_id,
-    away_id
-):
+# ==================================
+# H2H
+# ==================================
+def get_h2h(home_id, away_id):
 
-    url = (
-        f"https://{HOST}/fixtures/headtohead"
-        f"?h2h={home_id}-{away_id}"
-    )
+    if not home_id or not away_id:
+        return []
+
+    url = f"https://{HOST}/fixtures/headtohead?h2h={home_id}-{away_id}"
 
     try:
 
-        response = requests.get(
-            url,
-            headers=headers,
-            timeout=10
-        )
+        r = requests.get(url, headers=headers, timeout=20)
+        data = r.json()
 
-        data = response.json()
+        if "errors" in data and data["errors"]:
+            print("API LIMIT H2H:", data["errors"])
+            return []
 
-        return data.get(
-            "response",
-            []
-        )
+        return data.get("response", [])
 
-    except Exception as e:
-
-        print(
-            "get_h2h:",
-            e
-        )
-
+    except:
         return []
 
 
-# =========================
+# ==================================
 # FEATURES
-# =========================
-def build_features(
-    matches,
-    team_id
-):
+# ==================================
+def build_features(matches, team_id):
 
     if not matches:
+        return [1.5, 1.2, 0.5, 0.5]  # 🔥 fallback seguro
 
-        return {
-            "avg_gf": 1.5,
-            "avg_ga": 1.2,
-            "win_rate": 0.5,
-            "form": 0.5,
-            "home_avg": 1.5,
-            "away_avg": 1.2
-        }
-
-    goals_for = 0
-    goals_against = 0
-
+    gf = 0
+    ga = 0
     wins = 0
     draws = 0
-    losses = 0
+    form = 0
+    played = 0
 
-    home_goals = 0
-    away_goals = 0
-
-    home_games = 0
-    away_games = 0
-
-    form_points = 0
-
-    for match in matches:
+    for m in matches:
 
         try:
+            home_id = m["teams"]["home"]["id"]
 
-            is_home = (
-                match["teams"]["home"]["id"]
-                == team_id
-            )
+            hg = m["goals"]["home"] or 0
+            ag = m["goals"]["away"] or 0
 
-            hg = (
-                match["goals"]["home"] or 0
-            )
+            is_home = home_id == team_id
 
-            ag = (
-                match["goals"]["away"] or 0
-            )
+            goals_for = hg if is_home else ag
+            goals_against = ag if is_home else hg
 
-            if is_home:
+            gf += goals_for
+            ga += goals_against
 
-                gf = hg
-                ga = ag
-
-                home_goals += gf
-                home_games += 1
-
-            else:
-
-                gf = ag
-                ga = hg
-
-                away_goals += gf
-                away_games += 1
-
-            goals_for += gf
-            goals_against += ga
-
-            if gf > ga:
-
+            if goals_for > goals_against:
                 wins += 1
-                form_points += 3
-
-            elif gf == ga:
-
+                form += 3
+            elif goals_for == goals_against:
                 draws += 1
-                form_points += 1
+                form += 1
 
-            else:
-
-                losses += 1
+            played += 1
 
         except:
-            pass
+            continue
 
-    played = max(
-        len(matches),
-        1
-    )
+    if played == 0:
+        return [1.5, 1.2, 0.5, 0.5]
 
-    return {
-
-        "avg_gf":
-            goals_for / played,
-
-        "avg_ga":
-            goals_against / played,
-
-        "win_rate":
-            wins / played,
-
-        "form":
-            form_points / (played * 3),
-
-        "home_avg":
-            home_goals / max(home_games, 1),
-
-        "away_avg":
-            away_goals / max(away_games, 1)
-    }
+    return [
+        gf / played,
+        ga / played,
+        wins / played,
+        form / (played * 3)
+    ]
